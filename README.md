@@ -131,7 +131,7 @@ ZRM uses protobuf for all message serialization. Standard message definitions ar
 ### Standard Messages
 
 - **geometry.proto**: Point, Vector3, Quaternion, Pose, Pose2D, Twist, PoseStamped
-- **services.proto**: AddTwoInts, ComputePath, GetTransform (example services)
+- **services.proto**: Trigger
 
 ## Architecture
 
