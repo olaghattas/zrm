@@ -1,4 +1,5 @@
 # ZRM (Zenoh ROS-like Middleware)
+[![CI](https://github.com/JafarAbdi/zrm/actions/workflows/ci.yml/badge.svg)](https://github.com/JafarAbdi/zrm/actions/workflows/ci.yml)
 
 A minimal, single-file communication middleware built on Zenoh, providing a clean and simple API inspired by ROS2 patterns.
 
@@ -161,21 +162,6 @@ ZRM uses protobuf for all message serialization. Standard message definitions ar
 
 - **geometry.proto**: Point, Vector3, Quaternion, Pose, Pose2D, Twist, PoseStamped
 - **services.proto**: Trigger
-
-## Architecture
-
-### Node-Based Design
-- **Node as factory**: All Publishers, Subscribers, Services, and Clients are created through `Node` factory methods
-- **Context management**: Global `Context` holds the Zenoh session and domain configuration
-- **Lazy initialization**: Global context created on first node instantiation
-
-### Session Management
-- **Single session**: One Zenoh session shared across all nodes and components
-- **Thread-safe**: Context creation uses double-checked locking
-
-### Serialization
-- **Protobuf-based**: All messages serialized with `msg.SerializeToString()`
-- **Type enforcement**: Runtime validation via `isinstance()`
 
 ## CLI Tools
 
