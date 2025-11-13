@@ -51,7 +51,7 @@ uv run pytest tests/ -v
 
 ```python
 from zrm import Node
-from zrm.generated_protos import geometry_pb2
+from zrm.msgs import geometry_pb2
 
 # Create a node
 node = Node("my_node")
@@ -95,11 +95,11 @@ Services use namespaced Request/Response messages for better organization:
 
 ```python
 from zrm import Node
-from zrm.generated_protos import example_services_pb2
+from zrm.srvs import examples_pb2
 
 # Define service handler
 def add_callback(req):
-    return example_services_pb2.AddTwoInts.Response(sum=req.a + req.b)
+    return examples_pb2.AddTwoInts.Response(sum=req.a + req.b)
 
 # Create node
 node = Node("service_node")
@@ -107,18 +107,18 @@ node = Node("service_node")
 # Create service server via node factory method
 server = node.create_service(
     service="add_two_ints",
-    service_type=example_services_pb2.AddTwoInts,
+    service_type=examples_pb2.AddTwoInts,
     callback=add_callback,
 )
 
 # Create service client via node factory method
 client = node.create_client(
     service="add_two_ints",
-    service_type=example_services_pb2.AddTwoInts,
+    service_type=examples_pb2.AddTwoInts,
 )
 
 # Call service
-request = example_services_pb2.AddTwoInts.Request(a=5, b=3)
+request = examples_pb2.AddTwoInts.Request(a=5, b=3)
 response = client.call(request)
 print(f"Sum: {response.sum}")  # Output: 8
 
@@ -143,39 +143,92 @@ message AddTwoInts {
 }
 ```
 
-## Protobuf Workflow
+## Message Organization
 
-ZRM uses protobuf for all message serialization. Standard message definitions are in `proto/`.
+ZRM uses a convention-based message organization:
+
+### Directory Structure
+
+```
+proto/
+├── msgs/              # Message definitions
+│   ├── geometry.proto
+│   ├── sensor.proto
+│   └── header.proto
+└── srvs/              # Service definitions
+    ├── std.proto
+    └── examples.proto
+src/zrm/
+├── msgs/                  # Generated message modules
+│   ├── geometry_pb2.py
+│   ├── sensor_pb2.py
+│   └── header_pb2.py
+└── srvs/                  # Generated service modules
+    ├── std_pb2.py
+    └── examples_pb2.py
+```
 
 ### Generating Python Code
 
 ```bash
-# To make sure protoc generate the files with the correct import paths
-./protoc-33.0-linux-x86_64/bin/protoc \
-  --pyi_out=src \
-  --python_out=src \
-  --proto_path=zrm/generated_protos=proto \
-  $(fd --extension proto)
+# Generate message modules
+../protoc-33.0-linux-x86_64/bin/protoc --pyi_out=src --python_out=src --proto_path=zrm/msgs=proto/msgs/ $(fd -e proto . proto/msgs/)
+
+# Generate service modules
+../protoc-33.0-linux-x86_64/bin/protoc --pyi_out=src --python_out=src --proto_path=zrm/srvs=proto/srvs/ $(fd -e proto . proto/srvs/)
 ```
 
 ### Standard Messages
 
-- **geometry.proto**: Point, Vector3, Quaternion, Pose, Pose2D, Twist, PoseStamped
-- **services.proto**: Trigger
+**Messages** (`zrm.msgs`):
+- **geometry**: Point, Vector3, Quaternion, Pose, Pose2D, Twist, PoseStamped
+- **sensor**: Image, LaserScan, PointCloud2
+- **header**: Header
+
+**Services** (`zrm.srvs`):
+- **std**: Trigger
 
 ## CLI Tools
 
-ZRM provides command-line tools for inspecting the network:
+ZRM provides command-line tools for inspecting and interacting with the network:
+
+### Topic Commands
+
+```bash
+# List all topics and their publishers/subscribers
+zrm-topic list
+
+# Echo messages from a topic (auto-discovers type)
+zrm-topic echo /robot/pose
+
+# Echo with explicit type
+zrm-topic echo /robot/pose -t zrm/msgs/geometry/Pose2D
+
+# Publish to a topic
+zrm-topic pub /robot/pose "x: 1.0 y: 2.0 theta: 0.5" -t zrm/msgs/geometry/Pose2D -r 10
+
+# Measure topic frequency
+zrm-topic hz /robot/pose
+```
+
+### Node Commands
 
 ```bash
 # List all nodes in the network
-uv run zrm-nodes
+zrm-node list
+```
 
-# List all topics and their publishers/subscribers
-uv run zrm-topics
+### Service Commands
 
+```bash
 # List all services in the network
-uv run zrm-services
+zrm-service list
+
+# Call a service (auto-discovers type)
+zrm-service call add_two_ints 'a: 1 b: 2'
+
+# Call with explicit type
+zrm-service call add_two_ints 'a: 1 b: 2' -t zrm/srvs/examples/AddTwoInts
 ```
 
 ## Examples
