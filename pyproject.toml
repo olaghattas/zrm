@@ -1,11 +1,31 @@
 [project]
 name            = "zrm"
 version         = "1.1.2"
-description     = "Add your description here"
+description     = "A minimal, single-file communication middleware built on Zenoh"
 readme          = "README.md"
-authors         = [{ name = "JafarAbdi", email = "jafar.uruc@gmail.com" }]
 requires-python = ">=3.10"
-dependencies    = ["eclipse-zenoh>=1.6.2", "protobuf>=6.33.0"]
+
+authors = [{ name = "JafarAbdi", email = "jafar.uruc@gmail.com" }]
+license = { file = "LICENSE" }
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: System :: Networking",
+]
+
+dependencies = ["eclipse-zenoh>=1.6.2", "protobuf>=6.33.0"]
+
+[project.urls]
+Homepage   = "https://github.com/JafarAbdi/zrm"
+Repository = "https://github.com/JafarAbdi/zrm"
+Issues     = "https://github.com/JafarAbdi/zrm/issues"
+CI         = "https://github.com/JafarAbdi/zrm/actions"
 
 [dependency-groups]
 dev = ["pre-commit>=4.2.0", "pytest>=8.4.1"]
