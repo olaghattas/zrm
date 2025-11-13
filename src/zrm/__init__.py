@@ -12,6 +12,7 @@ import zenoh
 from google.protobuf.message import Message
 
 __all__ = [
+    "InvalidTopicName",
     "MessageTypeMismatchError",
     "Node",
     "Publisher",
@@ -26,6 +27,41 @@ __all__ = [
 # Global constants
 DOMAIN_ID = 0
 ADMIN_SPACE = "@zrm_lv"
+
+
+class InvalidTopicName(ValueError):
+    """Exception raised when a topic name is invalid."""
+
+
+def clean_topic_name(key: str) -> str:
+    """Validate and return topic name.
+
+    Zenoh forbids keys starting with '/'. This function validates that the
+    topic name does not start with a leading slash.
+
+    Args:
+        key: Topic or service name (e.g., "robot/pose")
+
+    Returns:
+        The validated topic name
+
+    Raises:
+        InvalidTopicName: If the key starts with '/'
+
+    Examples:
+        >>> clean_topic_name("robot/pose")
+        'robot/pose'
+        >>> clean_topic_name("/robot/pose")
+        Traceback (most recent call last):
+            ...
+        InvalidTopicName: Topic name '/robot/pose' cannot start with '/'. Use 'robot/pose' instead.
+    """
+    if key.startswith("/"):
+        raise InvalidTopicName(
+            f"Topic name '{key}' cannot start with '/'. Use '{key.lstrip('/')}' instead."
+        )
+    return key
+
 
 # Global context management
 _global_context: "Context | None" = None
@@ -419,10 +455,10 @@ class Publisher:
             topic: Zenoh key expression (e.g., "robot/pose")
             msg_type: Protobuf message type
         """
-        self._topic = topic
+        self._topic = clean_topic_name(topic)
         self._msg_type = msg_type
         self._session = context.session
-        self._publisher = self._session.declare_publisher(topic)
+        self._publisher = self._session.declare_publisher(self._topic)
 
         # Declare liveliness token for graph discovery
         self._lv_token = self._session.liveliness().declare_token(liveliness_key)
@@ -477,7 +513,7 @@ class Subscriber:
             msg_type: Protobuf message type
             callback: Optional callback function called on each message
         """
-        self._topic = topic
+        self._topic = clean_topic_name(topic)
         self._msg_type = msg_type
         self._callback = callback
         self._latest_msg: Message | None = None
@@ -490,7 +526,7 @@ class Subscriber:
                 # Extract type name from attachment
                 if sample.attachment is None:
                     raise MessageTypeMismatchError(
-                        f"Received message without type metadata on topic '{topic}'. "
+                        f"Received message without type metadata on topic '{self._topic}'. "
                         "Ensure publisher includes type information.",
                     )
                 actual_type_name = sample.attachment.to_bytes().decode()
@@ -502,9 +538,9 @@ class Subscriber:
                 if self._callback is not None:
                     self._callback(msg)
             except Exception as e:
-                print(f"Error in subscriber callback for topic '{topic}': {e}")
+                print(f"Error in subscriber callback for topic '{self._topic}': {e}")
 
-        self._subscriber = self._session.declare_subscriber(topic, listener)
+        self._subscriber = self._session.declare_subscriber(self._topic, listener)
 
         # Declare liveliness token for graph discovery
         self._lv_token = self._session.liveliness().declare_token(liveliness_key)
@@ -549,7 +585,7 @@ class ServiceServer:
             service_type: Protobuf service message type with nested Request and Response
             callback: Function that takes request and returns response
         """
-        self._service = service
+        self._service = clean_topic_name(service)
         self._request_type = service_type.Request
         self._response_type = service_type.Response
         self._callback = callback
@@ -561,7 +597,7 @@ class ServiceServer:
                 # Extract and validate request type
                 if query.attachment is None:
                     raise MessageTypeMismatchError(
-                        f"Received service request without type metadata on '{service}'. "
+                        f"Received service request without type metadata on '{self._service}'. "
                         "Ensure client includes type information.",
                     )
                 actual_request_type = query.attachment.to_bytes().decode()
@@ -585,7 +621,7 @@ class ServiceServer:
                 response_type_name = get_type_name(response)
                 response_attachment = zenoh.ZBytes(response_type_name.encode())
                 query.reply(
-                    service,
+                    self._service,
                     serialize(response),
                     attachment=response_attachment,
                 )
@@ -593,10 +629,12 @@ class ServiceServer:
             except Exception as e:
                 # Send error response
                 error_msg = f"Service error: {e}"
-                print(f"Error in service '{service}': {error_msg}")
+                print(f"Error in service '{self._service}': {error_msg}")
                 query.reply_err(zenoh.ZBytes(error_msg.encode()))
 
-        self._queryable = self._session.declare_queryable(service, queryable_handler)
+        self._queryable = self._session.declare_queryable(
+            self._service, queryable_handler
+        )
 
         # Declare liveliness token for graph discovery
         self._lv_token = self._session.liveliness().declare_token(liveliness_key)
@@ -628,7 +666,7 @@ class ServiceClient:
             service: Service name
             service_type: Protobuf service message type with nested Request and Response
         """
-        self._service = service
+        self._service = clean_topic_name(service)
         self._request_type = service_type.Request
         self._response_type = service_type.Response
 
@@ -991,12 +1029,13 @@ class Node:
         """Create a publisher for this node.
 
         Args:
-            topic: Zenoh key expression (e.g., "robot/pose")
+            topic: Zenoh key expression (e.g., "robot/pose" or "/robot/pose")
             msg_type: Protobuf message type
 
         Returns:
             Publisher instance
         """
+        topic = clean_topic_name(topic)
         lv_key = _make_endpoint_lv_key(
             domain_id=self._context.domain_id,
             z_id=str(self._context.session.info.zid()),
@@ -1016,13 +1055,14 @@ class Node:
         """Create a subscriber for this node.
 
         Args:
-            topic: Zenoh key expression (e.g., "robot/pose")
+            topic: Zenoh key expression (e.g., "robot/pose" or "/robot/pose")
             msg_type: Protobuf message type
             callback: Optional callback function called on each message
 
         Returns:
             Subscriber instance
         """
+        topic = clean_topic_name(topic)
         lv_key = _make_endpoint_lv_key(
             domain_id=self._context.domain_id,
             z_id=str(self._context.session.info.zid()),
@@ -1042,7 +1082,7 @@ class Node:
         """Create a service server for this node.
 
         Args:
-            service: Service name (e.g., "compute_trajectory")
+            service: Service name (e.g., "compute_trajectory" or "/compute_trajectory")
             service_type: Protobuf service message type with nested Request and Response
             callback: Function that takes request and returns response
 
@@ -1064,6 +1104,7 @@ class Node:
                 f"Service type '{service_type.__name__}' must have a nested 'Response' message"
             )
 
+        service = clean_topic_name(service)
         lv_key = _make_endpoint_lv_key(
             domain_id=self._context.domain_id,
             z_id=str(self._context.session.info.zid()),
@@ -1082,7 +1123,7 @@ class Node:
         """Create a service client for this node.
 
         Args:
-            service: Service name
+            service: Service name (e.g., "compute_trajectory" or "/compute_trajectory")
             service_type: Protobuf service message type with nested Request and Response
 
         Returns:
@@ -1103,6 +1144,7 @@ class Node:
                 f"Service type '{service_type.__name__}' must have a nested 'Response' message"
             )
 
+        service = clean_topic_name(service)
         lv_key = _make_endpoint_lv_key(
             domain_id=self._context.domain_id,
             z_id=str(self._context.session.info.zid()),

@@ -7,7 +7,7 @@ import time
 
 from google.protobuf import text_format
 
-from zrm import EntityKind, Node, get_message_type
+import zrm
 
 
 # ANSI color codes
@@ -25,7 +25,7 @@ class Color:
     DIM = "\033[2m"
 
 
-def get_topic_type_from_graph(node: Node, topic: str) -> str:
+def get_topic_type_from_graph(node: zrm.Node, topic: str) -> str | None:
     """Get the message type for a topic from the graph.
 
     Args:
@@ -38,18 +38,19 @@ def get_topic_type_from_graph(node: Node, topic: str) -> str:
     Raises:
         ValueError: If topic is not found in the graph
     """
+    topic = zrm.clean_topic_name(topic)
     topics = node.graph.get_topic_names_and_types()
     for topic_name, type_name in topics:
         if topic_name == topic:
             return type_name
 
-    raise ValueError(f"Topic '{topic}' not found in the network")
+    return None
 
 
 def list_topics():
     """List all topics in the ZRM network."""
     # Create a temporary node for graph access
-    node = Node("_zrm_cli_topic")
+    node = zrm.Node("_zrm_cli_topic")
 
     # Get all topics with their types
     topics = node.graph.get_topic_names_and_types()
@@ -66,7 +67,9 @@ def list_topics():
         print(f"  Type: {Color.DIM}{type_name}{Color.RESET}")
 
         # Get publishers for this topic
-        publishers = node.graph.get_entities_by_topic(EntityKind.PUBLISHER, topic_name)
+        publishers = node.graph.get_entities_by_topic(
+            zrm.EntityKind.PUBLISHER, topic_name
+        )
         if publishers:
             pub_nodes = [e.node_name for e in publishers]
             pub_count = len(pub_nodes)
@@ -76,7 +79,7 @@ def list_topics():
 
         # Get subscribers for this topic
         subscribers = node.graph.get_entities_by_topic(
-            EntityKind.SUBSCRIBER, topic_name
+            zrm.EntityKind.SUBSCRIBER, topic_name
         )
         if subscribers:
             sub_nodes = [e.node_name for e in subscribers]
@@ -99,23 +102,22 @@ def pub_topic(topic: str, msg_type_name: str | None, data: str, rate: float):
         data: Message data in protobuf text format
         rate: Publishing rate in Hz
     """
-    node = Node("_zrm_cli_pub")
+    node = zrm.Node("_zrm_cli_pub")
 
     # Auto-discover type if not provided
-    if msg_type_name is None:
-        try:
-            msg_type_name = get_topic_type_from_graph(node, topic)
-            print(f"{Color.DIM}Auto-discovered type: {msg_type_name}{Color.RESET}")
-        except ValueError as e:
-            print(f"{Color.RED}Error: {e}{Color.RESET}")
-            print(
-                f"{Color.YELLOW}Hint: Topic not found. You must specify the type with --type{Color.RESET}"
-            )
-            node.close()
-            sys.exit(1)
+    if (
+        msg_type_name is None
+        and (msg_type_name := get_topic_type_from_graph(node, topic)) is None
+    ):
+        print(
+            f"{Color.YELLOW}Hint: Topic not found. You must specify the type with --type{Color.RESET}"
+        )
+        node.close()
+        sys.exit(1)
+    print(f"{Color.DIM}Auto-discovered type: {msg_type_name}{Color.RESET}")
 
     try:
-        msg_type = get_message_type(msg_type_name)
+        msg_type = zrm.get_message_type(msg_type_name)
     except (ImportError, AttributeError, ValueError) as e:
         print(f"{Color.RED}Error loading message type: {e}{Color.RESET}")
         print(
@@ -163,23 +165,22 @@ def echo_topic(topic: str, msg_type_name: str | None):
         topic: Topic name to subscribe to
         msg_type_name: Protobuf message type name (auto-discovered if None)
     """
-    node = Node("_zrm_cli_echo")
+    node = zrm.Node("_zrm_cli_echo")
 
     # Auto-discover type if not provided
-    if msg_type_name is None:
-        try:
-            msg_type_name = get_topic_type_from_graph(node, topic)
-            print(f"{Color.DIM}Auto-discovered type: {msg_type_name}{Color.RESET}\n")
-        except ValueError as e:
-            print(f"{Color.RED}Error: {e}{Color.RESET}")
-            print(
-                f"{Color.YELLOW}Hint: Topic not found. You must specify the type with --type{Color.RESET}"
-            )
-            node.close()
-            sys.exit(1)
+    if (
+        msg_type_name is None
+        and (msg_type_name := get_topic_type_from_graph(node, topic)) is None
+    ):
+        print(
+            f"{Color.YELLOW}Hint: Topic not found. You must specify the type with --type{Color.RESET}"
+        )
+        node.close()
+        sys.exit(1)
+    print(f"{Color.DIM}Auto-discovered type: {msg_type_name}{Color.RESET}\n")
 
     try:
-        msg_type = get_message_type(msg_type_name)
+        msg_type = zrm.get_message_type(msg_type_name)
     except (ImportError, AttributeError, ValueError) as e:
         print(f"{Color.RED}Error loading message type: {e}{Color.RESET}")
         print(
@@ -218,23 +219,22 @@ def hz_topic(topic: str, msg_type_name: str | None, window: int):
         msg_type_name: Protobuf message type name (auto-discovered if None)
         window: Window size for averaging (number of messages)
     """
-    node = Node("_zrm_cli_hz")
+    node = zrm.Node("_zrm_cli_hz")
 
     # Auto-discover type if not provided
-    if msg_type_name is None:
-        try:
-            msg_type_name = get_topic_type_from_graph(node, topic)
-            print(f"{Color.DIM}Auto-discovered type: {msg_type_name}{Color.RESET}\n")
-        except ValueError as e:
-            print(f"{Color.RED}Error: {e}{Color.RESET}")
-            print(
-                f"{Color.YELLOW}Hint: Topic not found. You must specify the type with --type{Color.RESET}"
-            )
-            node.close()
-            sys.exit(1)
+    if (
+        msg_type_name is None
+        and (msg_type_name := get_topic_type_from_graph(node, topic)) is None
+    ):
+        print(
+            f"{Color.YELLOW}Hint: Topic not found. You must specify the type with --type{Color.RESET}"
+        )
+        node.close()
+        sys.exit(1)
+    print(f"{Color.DIM}Auto-discovered type: {msg_type_name}{Color.RESET}\n")
 
     try:
-        msg_type = get_message_type(msg_type_name)
+        msg_type = zrm.get_message_type(msg_type_name)
     except (ImportError, AttributeError, ValueError) as e:
         print(f"{Color.RED}Error loading message type: {e}{Color.RESET}")
         print(
@@ -334,18 +334,23 @@ def main():
 
     args = parser.parse_args()
 
-    match args.command:
-        case "list":
-            list_topics()
-        case "pub":
-            pub_topic(args.topic, args.msg_type, args.data, args.rate)
-        case "echo":
-            echo_topic(args.topic, args.msg_type)
-        case "hz":
-            hz_topic(args.topic, args.msg_type, args.window)
-        case _:
-            parser.print_help()
-            sys.exit(1)
+    try:
+        match args.command:
+            case "list":
+                list_topics()
+            case "pub":
+                pub_topic(args.topic, args.msg_type, args.data, args.rate)
+            case "echo":
+                echo_topic(args.topic, args.msg_type)
+            case "hz":
+                hz_topic(args.topic, args.msg_type, args.window)
+            case _:
+                parser.print_help()
+                sys.exit(1)
+    except Exception as e:
+        print(f"{Color.RED}Error: {e}{Color.RESET}")
+        zrm.shutdown()
+        sys.exit(1)
 
 
 if __name__ == "__main__":
