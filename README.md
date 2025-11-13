@@ -22,7 +22,7 @@ For development:
 
 ```bash
 # Clone the repository and install dependencies
-git clone https://github.com/yourusername/zrm.git
+git clone https://github.com/JafarAbdi/zrm.git
 cd zrm
 uv sync
 ```
