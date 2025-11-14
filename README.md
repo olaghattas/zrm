@@ -201,16 +201,16 @@ ZRM provides command-line tools for inspecting and interacting with the network:
 zrm-topic list
 
 # Echo messages from a topic (auto-discovers type)
-zrm-topic echo /robot/pose
+zrm-topic echo robot/pose
 
 # Echo with explicit type
-zrm-topic echo /robot/pose -t zrm/msgs/geometry/Pose2D
+zrm-topic echo robot/pose -t zrm/msgs/geometry/Pose2D
 
 # Publish to a topic
-zrm-topic pub /robot/pose "x: 1.0 y: 2.0 theta: 0.5" -t zrm/msgs/geometry/Pose2D -r 10
+zrm-topic pub robot/pose "x: 1.0 y: 2.0 theta: 0.5" -t zrm/msgs/geometry/Pose2D -r 10
 
 # Measure topic frequency
-zrm-topic hz /robot/pose
+zrm-topic hz robot/pose
 ```
 
 ### Node Commands
