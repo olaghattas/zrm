@@ -754,27 +754,25 @@ class ServiceClient:
         )
 
         for reply in replies:
-            try:
-                # Extract and validate response type
-                if reply.ok.attachment is None:
-                    raise MessageTypeMismatchError(
-                        f"Received service response without type metadata from '{self._service}'. "
-                        "Ensure server includes type information.",
-                    )
-                actual_response_type = reply.ok.attachment.to_bytes().decode()
-
-                # Deserialize response with type validation
-                response = deserialize(
-                    reply.ok.payload,
-                    self._response_type,
-                    actual_response_type,
-                )
-                return response
-            except Exception as e:
-                error_msg = reply.err.payload.to_string()
+            if reply.ok is None:
                 raise ServiceError(
-                    f"Service '{self._service}' returned error: {error_msg}",
-                ) from e
+                    f"Service '{self._service}' returned error: {reply.err.payload.to_string()}",
+                )
+            # Extract and validate response type
+            if reply.ok.attachment is None:
+                raise MessageTypeMismatchError(
+                    f"Received service response without type metadata from '{self._service}'. "
+                    "Ensure server includes type information.",
+                )
+            actual_response_type = reply.ok.attachment.to_bytes().decode()
+
+            # Deserialize response with type validation
+            response = deserialize(
+                reply.ok.payload,
+                self._response_type,
+                actual_response_type,
+            )
+            return response
 
         # No replies received
         raise TimeoutError(
@@ -804,17 +802,18 @@ class Graph:
         """
         self._domain_id = domain_id
         self._data = GraphData()
-        self._lock = threading.Lock()
+        self._condition = threading.Condition()
         self._session = session
 
         # Subscribe to liveliness tokens with history to get existing entities
         def liveliness_callback(sample: zenoh.Sample) -> None:
             ke = str(sample.key_expr)
-            with self._lock:
+            with self._condition:
                 if sample.kind == zenoh.SampleKind.PUT:
                     self._data.insert(ke)
                 elif sample.kind == zenoh.SampleKind.DELETE:
                     self._data.remove(ke)
+                self._condition.notify_all()
 
         key_expr = f"{ADMIN_SPACE}/{domain_id}/**"
         # Explicitly call discovery on initialization
@@ -853,7 +852,7 @@ class Graph:
             if entity.kind == kind:
                 total += 1
 
-        with self._lock:
+        with self._condition:
             if kind in (EntityKind.PUBLISHER, EntityKind.SUBSCRIBER):
                 self._data.visit_by_topic(topic, counter)
             elif kind in (EntityKind.SERVICE, EntityKind.CLIENT):
@@ -880,7 +879,7 @@ class Graph:
             if entity.kind == kind:
                 results.append(entity)
 
-        with self._lock:
+        with self._condition:
             self._data.visit_by_topic(topic, collector)
 
         return results
@@ -906,7 +905,7 @@ class Graph:
             if entity.kind == kind:
                 results.append(entity)
 
-        with self._lock:
+        with self._condition:
             self._data.visit_by_service(service, collector)
 
         return results
@@ -932,7 +931,7 @@ class Graph:
             if entity.kind == kind:
                 results.append(entity)
 
-        with self._lock:
+        with self._condition:
             self._data.visit_by_node(node_name, collector)
 
         return results
@@ -945,7 +944,7 @@ class Graph:
         """
         node_names: set[str] = set()
 
-        with self._lock:
+        with self._condition:
             for entity in self._data._entities.values():
                 node_names.add(entity.node_name)
 
@@ -959,7 +958,7 @@ class Graph:
         """
         results: dict[str, str] = {}
 
-        with self._lock:
+        with self._condition:
             for topic_name, keys in self._data._by_topic.items():
                 for key in keys:
                     entity = self._data._entities[key]
@@ -977,7 +976,7 @@ class Graph:
         """
         results: dict[str, str] = {}
 
-        with self._lock:
+        with self._condition:
             for service_name, keys in self._data._by_service.items():
                 for key in keys:
                     entity = self._data._entities[key]
@@ -1014,10 +1013,90 @@ class Graph:
             ):
                 results.append((entity.topic, entity.type_name))
 
-        with self._lock:
+        with self._condition:
             self._data.visit_by_node(node_name, collector)
 
         return results
+
+    def wait_for_subscribers(self, topic: str, timeout: float | None = None) -> bool:
+        """Wait until at least one subscriber exists on the topic.
+
+        Args:
+            topic: Topic name
+            timeout: Maximum time to wait in seconds, or None for no timeout
+
+        Returns:
+            True if the condition was met, False if timeout occurred
+        """
+
+        def predicate() -> bool:
+            for key in self._data._by_topic.get(topic, []):
+                if self._data._entities[key].kind == EntityKind.SUBSCRIBER:
+                    return True
+            return False
+
+        with self._condition:
+            return self._condition.wait_for(predicate, timeout=timeout)
+
+    def wait_for_publishers(self, topic: str, timeout: float | None = None) -> bool:
+        """Wait until at least one publisher exists on the topic.
+
+        Args:
+            topic: Topic name
+            timeout: Maximum time to wait in seconds, or None for no timeout
+
+        Returns:
+            True if the condition was met, False if timeout occurred
+        """
+
+        def predicate() -> bool:
+            for key in self._data._by_topic.get(topic, []):
+                if self._data._entities[key].kind == EntityKind.PUBLISHER:
+                    return True
+            return False
+
+        with self._condition:
+            return self._condition.wait_for(predicate, timeout=timeout)
+
+    def wait_for_service(self, service: str, timeout: float | None = None) -> bool:
+        """Wait until a service server is available.
+
+        Args:
+            service: Service name
+            timeout: Maximum time to wait in seconds, or None for no timeout
+
+        Returns:
+            True if the condition was met, False if timeout occurred
+        """
+
+        def predicate() -> bool:
+            for key in self._data._by_service.get(service, []):
+                if self._data._entities[key].kind == EntityKind.SERVICE:
+                    return True
+            return False
+
+        with self._condition:
+            return self._condition.wait_for(predicate, timeout=timeout)
+
+    def wait_for_clients(self, service: str, timeout: float | None = None) -> bool:
+        """Wait until at least one client exists for the service.
+
+        Args:
+            service: Service name
+            timeout: Maximum time to wait in seconds, or None for no timeout
+
+        Returns:
+            True if the condition was met, False if timeout occurred
+        """
+
+        def predicate() -> bool:
+            for key in self._data._by_service.get(service, []):
+                if self._data._entities[key].kind == EntityKind.CLIENT:
+                    return True
+            return False
+
+        with self._condition:
+            return self._condition.wait_for(predicate, timeout=timeout)
 
     def close(self) -> None:
         """Close the graph and release resources."""
