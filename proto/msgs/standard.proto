@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package zrm;
+
+// Vector of floats (or ints)
+message FloatVector {
+  repeated double values = 1;
+}
+
+// Vector of integers
+message IntVector {
+  repeated int32 values = 1;
+}
